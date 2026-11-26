@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Auto-update US-only Cloudflare preferred IP list.
-Fetches several public CF preferred-IP sources, keeps only US entries,
-deduplicates, and writes:
-  - best-cf-us.txt        (all US IPs found)
-  - best-cf-us-top20.txt  (first 20)
+Auto-update Cloudflare preferred IP lists (US-only + SG+US).
+Fetches several public CF preferred-IP sources, deduplicates, and writes:
+  - best-cf-us.txt          (all US IPs found)
+  - best-cf-us-top20.txt    (first 20 US)
+  - best-cf-sg-us.txt       (all SG+US IPs found, latency order from source)
+  - best-cf-sg-us-top20.txt (first 20 SG+US)
 Format per line (edgetunnel / cfnew compatible):
-  IP:port#US 🇺🇸
-If fewer than 5 IPs are found, the old files are kept (no overwrite),
-so a temporary upstream outage does not empty your node list.
+  IP:port#US 🇺🇸  /  IP:port#SG 🇸🇬
+If fewer than 5 IPs are found for a list, its old files are kept
+(no overwrite), so a temporary upstream outage does not empty your nodes.
+v2 (2026-11-26): added SG+US lists for daily low-latency use.
 """
 import ipaddress
 import re
@@ -91,6 +93,41 @@ def parse(text, mode, networks):
     return out
 
 
+FLAG = {"SG": "🇸🇬", "US": "🇺🇸"}
+
+
+def parse_sg_us(text, networks):
+    """Keep SG and US entries, preserving country and source order."""
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = IP_PORT_RE.match(line)
+        if not m:
+            continue
+        ip, port, remark = m.group(1), m.group(2), (m.group(3) or "").upper()
+        if port not in ALLOWED_PORTS:
+            continue
+        country = None
+        for code in ("SG", "US"):
+            if code in remark:
+                country = code
+                break
+        if not country:
+            continue
+        if not is_cf_ip(ip, networks):
+            continue
+        out.append(f"{ip}:{port}#{country} {FLAG[country]}")
+    return out
+
+
+def write_list(filename, items, label, now):
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(f"# {len(items)} {label} cf ips aggregated at {now} (Asia/Shanghai)\n")
+        f.write("\n".join(items) + "\n")
+
+
 def main():
     networks = load_cf_networks()
     seen = []
@@ -109,23 +146,41 @@ def main():
             print(f"WARN: failed {url}: {e}", file=sys.stderr)
 
     print(f"Total unique US entries: {len(seen)}")
-    if len(seen) < 5:
-        print("Too few entries (<5), keeping old files. Exiting without overwrite.")
-        return 0
-
     now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-    header = f"# {len(seen)} US cf ips aggregated at {now} (Asia/Shanghai)\n"
-    with open("best-cf-us.txt", "w", encoding="utf-8") as f:
-        f.write(header)
-        f.write("\n".join(seen) + "\n")
 
-    top20 = seen[:20]
-    header20 = f"# {len(top20)} US cf ips aggregated at {now} (Asia/Shanghai)\n"
-    with open("best-cf-us-top20.txt", "w", encoding="utf-8") as f:
-        f.write(header20)
-        f.write("\n".join(top20) + "\n")
+    if len(seen) >= 5:
+        write_list("best-cf-us.txt", seen, "US", now)
+        write_list("best-cf-us-top20.txt", seen[:20], "US", now)
+        print("Wrote best-cf-us.txt and best-cf-us-top20.txt")
+    else:
+        print("Too few US entries (<5), keeping old US files.")
 
-    print("Wrote best-cf-us.txt and best-cf-us-top20.txt")
+    # SG+US list: latency-ordered source is LancelotRar top100, top400 as supplement.
+    sg_us = []
+    sg_us_set = set()
+    for url in (
+        "https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-ip-scanned-top100.txt",
+        "https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-ip-scanned-top400.txt",
+    ):
+        try:
+            items = parse_sg_us(fetch(url), networks)
+            print(f"{url} -> {len(items)} SG+US entries")
+            for it in items:
+                key = it.split("#")[0]
+                if key not in sg_us_set:
+                    sg_us_set.add(key)
+                    sg_us.append(it)
+        except Exception as e:
+            print(f"WARN: failed {url}: {e}", file=sys.stderr)
+
+    print(f"Total unique SG+US entries: {len(sg_us)}")
+    if len(sg_us) >= 5:
+        write_list("best-cf-sg-us.txt", sg_us, "SG+US", now)
+        write_list("best-cf-sg-us-top20.txt", sg_us[:20], "SG+US", now)
+        print("Wrote best-cf-sg-us.txt and best-cf-sg-us-top20.txt")
+    else:
+        print("Too few SG+US entries (<5), keeping old SG+US files.")
+
     return 0
 
 
