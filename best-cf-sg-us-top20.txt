@@ -1,4 +1,4 @@
-# 20 SG+US cf ips aggregated at 2026-11-26 11:26 (Asia/Shanghai)
+# 20 SG+US cf ips aggregated at 2026-11-26 11:36 (Asia/Shanghai)
 172.64.146.157:443#SG 🇸🇬
 172.64.145.84:443#SG 🇸🇬
 172.64.157.18:443#SG 🇸🇬

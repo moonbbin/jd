@@ -1,4 +1,4 @@
-# 26 US cf ips aggregated at 2026-11-26 10:15 (Asia/Shanghai)
+# 26 US cf ips aggregated at 2026-11-26 11:36 (Asia/Shanghai)
 172.64.79.97:443#US 🇺🇸
 162.159.237.159:443#US 🇺🇸
 162.159.224.23:443#US 🇺🇸
